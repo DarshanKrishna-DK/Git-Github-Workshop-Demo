@@ -91,13 +91,22 @@ jobs:
           FILE=$(echo "${{ steps.changed.outputs.files }}" | grep '^contributors/.*\.json$')
           echo "Validating: $FILE"
 
-          # Fetch the file content from the PR head (safe: only parsing JSON, not executing)
-          gh pr diff ${{ github.event.pull_request.number }} | awk '/^diff --git a\/'"$(echo $FILE | sed 's/\//\\\//g')"'/{found=1; next} found && /^diff --git/{exit} found && /^\+[^+]/{gsub(/^\+/,""); print}' > /tmp/pr_file.json
+          # Download the raw file directly from the PR branch
+          PR_SHA="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+          RAW_URL="https://raw.githubusercontent.com/${REPO}/${PR_SHA}/${FILE}"
 
-          # If the awk extraction is empty, fall back to fetching via API
-          if [ ! -s /tmp/pr_file.json ]; then
-            gh api repos/${{ github.repository }}/contents/$FILE?ref=${{ github.event.pull_request.head.sha }} --jq '.content' | base64 -d > /tmp/pr_file.json
+          echo "Fetching from: $RAW_URL"
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o /tmp/pr_file.json "$RAW_URL")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "json_valid=false" >> $GITHUB_OUTPUT
+            echo "json_error=FAIL:Could not fetch file (HTTP $HTTP_CODE)" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          echo "File content:"
+          cat /tmp/pr_file.json
 
           RESULT=$(node -e "
             const fs = require('fs');
