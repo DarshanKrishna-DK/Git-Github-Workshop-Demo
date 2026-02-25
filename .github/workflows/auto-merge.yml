@@ -156,6 +156,7 @@ jobs:
       # ── Step 6: Approve the PR ────────────────────────
       - name: Approve PR
         if: steps.validate.outputs.valid == 'true' && steps.json_check.outputs.json_valid == 'true'
+        continue-on-error: true
         run: |
           gh pr review ${{ github.event.pull_request.number }} --approve --body "Looks good! Auto-approved by the workshop bot."
         env:
@@ -165,6 +166,6 @@ jobs:
       - name: Merge PR
         if: steps.validate.outputs.valid == 'true' && steps.json_check.outputs.json_valid == 'true'
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+          gh pr merge ${{ github.event.pull_request.number }} --squash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
