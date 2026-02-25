@@ -1,0 +1,51 @@
+# ────────────────────────────────────────────────────────────
+# Update Contributors Index
+# ────────────────────────────────────────────────────────────
+# Runs after a push to main. Scans the contributors/ folder
+# and regenerates contributors/index.json so the website
+# always knows which contributor files exist.
+# ────────────────────────────────────────────────────────────
+
+name: Update Contributors Index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contributors/**.json"
+
+permissions:
+  contents: write
+
+jobs:
+  update-index:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # List every .json file in contributors/ except index.json,
+      # then write them as a JSON array to contributors/index.json.
+      - name: Regenerate index.json
+        run: |
+          cd contributors
+          FILES=$(ls *.json 2>/dev/null | grep -v '^index\.json$' | sort)
+
+          if [ -z "$FILES" ]; then
+            echo "[]" > index.json
+          else
+            echo "$FILES" | jq -R -s 'split("\n") | map(select(length > 0))' > index.json
+          fi
+
+          echo "Updated index.json:"
+          cat index.json
+
+      - name: Commit and push updated index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add contributors/index.json
+          # Only commit if there are changes
+          git diff --cached --quiet || git commit -m "chore: update contributors index"
+          git push

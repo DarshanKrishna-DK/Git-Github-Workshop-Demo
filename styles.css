@@ -1,0 +1,131 @@
+/* ── Reset & Base ──────────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #0d1117;
+  color: #c9d1d9;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ───────────────────────────────────────── */
+header {
+  text-align: center;
+  padding: 3rem 1rem 1.5rem;
+}
+
+header h1 {
+  font-size: 2.4rem;
+  color: #58a6ff;
+  margin-bottom: 0.5rem;
+}
+
+header p {
+  font-size: 1rem;
+  color: #8b949e;
+}
+
+/* ── Responsive Card Grid ─────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 280px);
+  justify-content: center;
+  align-items: start;
+  gap: 1.5rem;
+  padding: 2rem 4rem;
+  flex: 1;
+}
+
+/* ── Contributor Card ─────────────────────────────── */
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 8px 24px rgba(88, 166, 255, 0.15);
+  border-color: #58a6ff;
+}
+
+.card h2 {
+  font-size: 1.25rem;
+  color: #f0f6fc;
+  margin-bottom: 0.75rem;
+}
+
+.card .info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: #8b949e;
+}
+
+.card .info span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.card .info .label {
+  color: #58a6ff;
+  font-weight: 600;
+  min-width: 100px;
+}
+
+.card .github-link {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  color: #ffffff;
+  background-color: #238636;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+}
+
+.card .github-link:hover {
+  background-color: #2ea043;
+}
+
+/* ── Empty State ──────────────────────────────────── */
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 4rem 1rem;
+  color: #8b949e;
+  font-size: 1.1rem;
+}
+
+/* ── Footer ───────────────────────────────────────── */
+footer {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #484f58;
+  font-size: 0.85rem;
+  border-top: 1px solid #21262d;
+}
+
+/* ── Responsive Tweaks ────────────────────────────── */
+@media (max-width: 600px) {
+  .grid {
+    padding: 1.5rem 1rem;
+  }
+
+  header h1 {
+    font-size: 1.6rem;
+  }
+}

@@ -1,0 +1,159 @@
+# ────────────────────────────────────────────────────────────
+# Auto-Merge Workflow for Workshop Contributors Board
+# ────────────────────────────────────────────────────────────
+# This workflow runs whenever a pull request is opened or updated.
+# It validates that the PR:
+#   1. Only adds a single JSON file inside contributors/
+#   2. Does NOT modify index.html, styles.css, or script.js
+#   3. The JSON file contains all required fields
+# If validation passes, it auto-approves and auto-merges the PR.
+# ────────────────────────────────────────────────────────────
+
+name: Auto Merge Contributor PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate-and-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Checkout the repository ───────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Step 2: Get the list of changed files ─────────
+      - name: Get changed files
+        id: changed
+        run: |
+          # Compare the PR branch with the base branch
+          FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
+          echo "Changed files:"
+          echo "$FILES"
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 3: Validate the changed files ────────────
+      - name: Validate PR changes
+        id: validate
+        run: |
+          FILES="${{ steps.changed.outputs.files }}"
+          VALID=true
+          ERROR=""
+
+          # Count total changed files
+          FILE_COUNT=$(echo "$FILES" | grep -c '[^[:space:]]' || true)
+          echo "Total files changed: $FILE_COUNT"
+
+          # Rule 1: Only one file should be changed
+          if [ "$FILE_COUNT" -ne 1 ]; then
+            VALID=false
+            ERROR="PR must add exactly one file. Found $FILE_COUNT changed files."
+          fi
+
+          # Rule 2: The single file must be inside contributors/ and end with .json
+          # (but NOT index.json, which is auto-managed)
+          CONTRIB_JSON=$(echo "$FILES" | grep -c '^contributors/.*\.json$' || true)
+          IS_INDEX=$(echo "$FILES" | grep -c '^contributors/index\.json$' || true)
+          if [ "$CONTRIB_JSON" -ne 1 ] || [ "$IS_INDEX" -eq 1 ]; then
+            VALID=false
+            ERROR="$ERROR The changed file must be a .json file inside the contributors/ folder (not index.json)."
+          fi
+
+          # Rule 3: No modifications to protected files
+          PROTECTED=$(echo "$FILES" | grep -E '^(index\.html|styles\.css|script\.js)$' || true)
+          if [ -n "$PROTECTED" ]; then
+            VALID=false
+            ERROR="$ERROR Protected files were modified: $PROTECTED"
+          fi
+
+          echo "valid=$VALID" >> $GITHUB_OUTPUT
+          echo "error=$ERROR" >> $GITHUB_OUTPUT
+
+      # ── Step 4: Validate JSON content ─────────────────
+      - name: Validate JSON content
+        if: steps.validate.outputs.valid == 'true'
+        id: json_check
+        run: |
+          # Find the contributor JSON file from the diff
+          FILE=$(echo "${{ steps.changed.outputs.files }}" | grep '^contributors/.*\.json$')
+          echo "Validating: $FILE"
+
+          # Check if the file exists (it should, since the PR adds it)
+          if [ ! -f "$FILE" ]; then
+            # Checkout the PR branch to access the file
+            git checkout ${{ github.event.pull_request.head.sha }} -- "$FILE"
+          fi
+
+          # Validate JSON syntax and required fields using a small Node.js script
+          RESULT=$(node -e "
+            const fs = require('fs');
+            try {
+              const data = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+              const required = ['name', 'year', 'branch', 'favoriteTech', 'github'];
+              const missing = required.filter(f => !data[f] || typeof data[f] !== 'string' || data[f].trim() === '');
+              if (missing.length > 0) {
+                console.log('FAIL:Missing fields: ' + missing.join(', '));
+              } else {
+                console.log('PASS');
+              }
+            } catch (e) {
+              console.log('FAIL:Invalid JSON — ' + e.message);
+            }
+          ")
+
+          echo "Validation result: $RESULT"
+
+          if [[ "$RESULT" == PASS ]]; then
+            echo "json_valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "json_valid=false" >> $GITHUB_OUTPUT
+            echo "json_error=$RESULT" >> $GITHUB_OUTPUT
+          fi
+
+      # ── Step 5: Post a comment if validation fails ────
+      - name: Comment on failure
+        if: steps.validate.outputs.valid != 'true' || steps.json_check.outputs.json_valid == 'false'
+        run: |
+          BODY="### Validation Failed\n\n"
+
+          if [ "${{ steps.validate.outputs.valid }}" != "true" ]; then
+            BODY="${BODY}**File check:** ${{ steps.validate.outputs.error }}\n\n"
+          fi
+
+          if [ "${{ steps.json_check.outputs.json_valid }}" == "false" ]; then
+            BODY="${BODY}**JSON check:** ${{ steps.json_check.outputs.json_error }}\n\n"
+          fi
+
+          BODY="${BODY}Please fix the issues and push again."
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(echo -e "$BODY")"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 6: Approve the PR ────────────────────────
+      - name: Approve PR
+        if: steps.validate.outputs.valid == 'true' && steps.json_check.outputs.json_valid == 'true'
+        run: |
+          gh pr review ${{ github.event.pull_request.number }} --approve --body "Looks good! Auto-approved by the workshop bot."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 7: Merge the PR ──────────────────────────
+      - name: Merge PR
+        if: steps.validate.outputs.valid == 'true' && steps.json_check.outputs.json_valid == 'true'
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
