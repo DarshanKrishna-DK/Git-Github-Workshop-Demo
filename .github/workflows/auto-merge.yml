@@ -7,12 +7,17 @@
 #   2. Does NOT modify index.html, styles.css, or script.js
 #   3. The JSON file contains all required fields
 # If validation passes, it auto-approves and auto-merges the PR.
+#
+# NOTE: We use pull_request_target so the workflow runs automatically
+# for fork PRs without requiring maintainer approval each time.
+# This is safe because we never execute code from the PR — we only
+# read file names and parse JSON.
 # ────────────────────────────────────────────────────────────
 
 name: Auto Merge Contributor PRs
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -24,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Step 1: Checkout the repository ───────────────
+      # ── Step 1: Checkout the base repository ──────────
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
@@ -34,7 +39,6 @@ jobs:
       - name: Get changed files
         id: changed
         run: |
-          # Compare the PR branch with the base branch
           FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
           echo "Changed files:"
           echo "$FILES"
@@ -52,7 +56,6 @@ jobs:
           VALID=true
           ERROR=""
 
-          # Count total changed files
           FILE_COUNT=$(echo "$FILES" | grep -c '[^[:space:]]' || true)
           echo "Total files changed: $FILE_COUNT"
 
@@ -62,8 +65,7 @@ jobs:
             ERROR="PR must add exactly one file. Found $FILE_COUNT changed files."
           fi
 
-          # Rule 2: The single file must be inside contributors/ and end with .json
-          # (but NOT index.json, which is auto-managed)
+          # Rule 2: The file must be a .json inside contributors/ (not index.json)
           CONTRIB_JSON=$(echo "$FILES" | grep -c '^contributors/.*\.json$' || true)
           IS_INDEX=$(echo "$FILES" | grep -c '^contributors/index\.json$' || true)
           if [ "$CONTRIB_JSON" -ne 1 ] || [ "$IS_INDEX" -eq 1 ]; then
@@ -86,21 +88,21 @@ jobs:
         if: steps.validate.outputs.valid == 'true'
         id: json_check
         run: |
-          # Find the contributor JSON file from the diff
           FILE=$(echo "${{ steps.changed.outputs.files }}" | grep '^contributors/.*\.json$')
           echo "Validating: $FILE"
 
-          # Check if the file exists (it should, since the PR adds it)
-          if [ ! -f "$FILE" ]; then
-            # Checkout the PR branch to access the file
-            git checkout ${{ github.event.pull_request.head.sha }} -- "$FILE"
+          # Fetch the file content from the PR head (safe: only parsing JSON, not executing)
+          gh pr diff ${{ github.event.pull_request.number }} | awk '/^diff --git a\/'"$(echo $FILE | sed 's/\//\\\//g')"'/{found=1; next} found && /^diff --git/{exit} found && /^\+[^+]/{gsub(/^\+/,""); print}' > /tmp/pr_file.json
+
+          # If the awk extraction is empty, fall back to fetching via API
+          if [ ! -s /tmp/pr_file.json ]; then
+            gh api repos/${{ github.repository }}/contents/$FILE?ref=${{ github.event.pull_request.head.sha }} --jq '.content' | base64 -d > /tmp/pr_file.json
           fi
 
-          # Validate JSON syntax and required fields using a small Node.js script
           RESULT=$(node -e "
             const fs = require('fs');
             try {
-              const data = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+              const data = JSON.parse(fs.readFileSync('/tmp/pr_file.json', 'utf8'));
               const required = ['name', 'year', 'branch', 'favoriteTech', 'github'];
               const missing = required.filter(f => !data[f] || typeof data[f] !== 'string' || data[f].trim() === '');
               if (missing.length > 0) {
